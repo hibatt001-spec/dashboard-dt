@@ -415,7 +415,6 @@ class _IndustrialCurvesSectionState extends State<IndustrialCurvesSection> {
         ),
         lineBarsData: [
           LineChartBarData(
-            spots: _fftVibrationSpots,
             isCurved: false,
             color: vibColor,
             barWidth: 1.2,

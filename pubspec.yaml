@@ -35,14 +35,14 @@ dependencies:
   cupertino_icons: ^1.0.8
   o3d: ^3.1.0
   google_fonts: ^8.1.0
-  fl_chart: ^0.66.0
+  fl_chart: ^1.2.0
   firebase_core: ^4.9.0
   firebase_auth: ^6.5.1
   cloud_firestore: ^6.4.1
   font_awesome_flutter: ^10.7.0
   model_viewer_plus: ^1.9.3
   google_mlkit_object_detection: ^0.13.0
-  mqtt_client: ^10.0.0
+  mqtt_client: ^10.11.11
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   path_provider: ^2.1.1

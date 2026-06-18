@@ -1,10 +1,8 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart'; 
+/*import 'package:flutter/material.dart';
 import 'dart:async';
 
-// استيراد الشاشات للتوجيه
-import 'login_screen.dart'; 
-import '../../dashboard/screens/dashboard_screen.dart'; 
+// استيراد الشاشة المقصودة للتوجيه بعد اكتمال التحميل
+import '../../dashboard/screens/dashboard_screen.dart'; // تأكدي أن هذا المسار يطابق مجلداتكِ
 
 class LoadingScreen extends StatefulWidget {
   const LoadingScreen({super.key});
@@ -13,18 +11,16 @@ class LoadingScreen extends StatefulWidget {
   State<LoadingScreen> createState() => _LoadingScreenState();
 }
 
-// 👈 أضفنا الـ SingleTickerProviderStateMixin هنا لدعم حركة دوران النقاط
 class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProviderStateMixin {
   double _loadingProgress = 0.0;
   String _loadingStatus = 'INITIALIZING SYSTEM CORES...';
   Timer? _progressTimer;
-  late AnimationController _rotationController; // 👈 متحكم دوران النقاط
+  late AnimationController _rotationController; 
 
   @override
   void initState() {
     super.initState();
     
-    // إعداد متحكم الدوران ليدور بشكل مستمر ولانهائي
     _rotationController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
@@ -36,13 +32,13 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
   @override
   void dispose() {
     _progressTimer?.cancel();
-    _rotationController.dispose(); // 👈 تنظيف الـ Controller لحماية الذاكرة
+    _rotationController.dispose(); 
     super.dispose();
   }
 
   void _startBootSequence() {
     const totalSteps = 100;
-    const duration = Duration(milliseconds: 25); // حوالي 2.5 ثانية للتحميل كامل
+    const duration = Duration(milliseconds: 25); 
 
     _progressTimer = Timer.periodic(duration, (timer) {
       if (!mounted) return;
@@ -60,37 +56,28 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
           }
         } else {
           _progressTimer?.cancel();
-          _checkAuthAndNavigate(); 
+          _navigateToDashboard(); // 🚀 استدعاء دالة الانتقال المباشر للـ Dashboard
         }
       });
     });
   }
 
-  // 🎯 فحص الـ Firebase Auth وتوجيه المستخدم تلقائياً
-  void _checkAuthAndNavigate() {
-    final User? user = FirebaseAuth.instance.currentUser;
-
+  // 🎯 التوجيه الهندسي النظيف والمباشر للـ DashboardScreen بعد نجاح عملية الـ Boot
+  void _navigateToDashboard() {
     if (!mounted) return;
 
-    if (user != null) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const DashboardScreen()),
-      );
-    } else {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
-    }
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => const DashboardScreen()),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
-    // 🎨 ضبط الألوان لتتوافق مع الثيمين (النهار والليل) مع الحفاظ على الهوية
-    final Color bgDark = isDark ? const Color(0xFF0A0F1D) : const Color(0xFF1E60D5); // أزرق ناصع في النهار وكحلي سيبراني في الليل
+    final Color bgDark = isDark ? const Color(0xFF0A0F1D) : const Color(0xFF1E60D5); 
     final Color textMain = isDark ? const Color(0xFF00E5FF) : Colors.white;
-    final Color progressColor = isDark ? const Color(0xFF9D4EDD) : Colors.white; // شريط أبيض ناصع في النهار وبنفسجي نيون في الليل
+    final Color progressColor = isDark ? const Color(0xFF9D4EDD) : Colors.white; 
     final Color trackColor = isDark ? const Color(0xFF9D4EDD).withOpacity(0.15) : Colors.white.withOpacity(0.25);
 
     return Scaffold(
@@ -101,7 +88,6 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // ── 🌀 المؤشر الدائري النقطي المتحرك (جديد ومطابق للصورة)
               RotationTransition(
                 turns: _rotationController,
                 child: SizedBox(
@@ -109,7 +95,6 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
                   height: 80,
                   child: Stack(
                     children: List.generate(8, (index) {
-                      // تدرج الشفافية ليعطي انطباع الدوران الممتد الأنيق
                       final double opacity = 0.2 + (index * 0.1); 
                       return Positioned.fill(
                         child: Align(
@@ -118,7 +103,7 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
                             width: 9,
                             height: 9,
                             decoration: BoxDecoration(
-                              color: textMain.withOpacity(opacity), // يتبع اللون الرئيسي لتناسق رائع
+                              color: textMain.withOpacity(opacity), 
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -130,11 +115,10 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
               ),
               const SizedBox(height: 40),
               
-              // اسم التطبيق بهوية صناعية هندسية
               Text(
                 'FEEDCOM DIGITAL TWIN',
                 style: TextStyle(
-                  color: isDark ? Colors.white : Colors.white,
+                  color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 2.0,
@@ -152,9 +136,8 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
               ),
               const SizedBox(height: 48),
 
-              // 📊 شريط التحميل المستقبلي (Progress Bar) الأفقي النظيف
               SizedBox(
-                width: 100, // 👈 نقصنا في الطول ليكون متناسقاً تحت الكلمة مباشرة
+                width: 100, 
                 height: 10,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
@@ -168,7 +151,6 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
               ),
               const SizedBox(height: 16),
 
-              // حالة التحميل الحالية ونسبة التقدم
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -192,7 +174,7 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                       fontFamily: 'Courier',
-                    ),
+                ),
                   ),
                 ],
               ),
@@ -203,7 +185,6 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
     );
   }
 
-  // دالة مساعدة لتوزيع النقاط الثمانية بشكل دائري متناسق حول المركز
   Alignment _getAlignmentForIndex(int index) {
     switch (index) {
       case 0: return Alignment.topCenter;
@@ -217,4 +198,4 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
       default: return Alignment.center;
     }
   }
-}
+}*/

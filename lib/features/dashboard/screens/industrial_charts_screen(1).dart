@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'dart:async';
-import 'dart:math' as math;
 import 'industrial_simulation_panel.dart';
 import 'digital_twin_motor_view.dart';
 import 'industrial_kpi_grid.dart';
@@ -15,15 +13,14 @@ import 'mqtt_service.dart';
 //  IndustrialChartsScreen — استقبال البيانات الحية من السيمولينك
 // ═══════════════════════════════════════════════════════════════
 class IndustrialChartsScreen extends StatefulWidget {
-  final List<FlSpot> vibrationFftSpots;   // 👈 استقبال مصفوفة الـ FFT الحية
-  final List<FlSpot> vibrationTimeSpots;  // 👈 استقبال مصفوفة الإشارة الزمنية الحية
-  final bool isDarkMode;                  // 👈 تصحيح تعريف متغير الثيم الاقتصادي
+  final List<FlSpot> vibrationFftSpots;   // 👈 تفعيل استقبال مصفوفة الـ FFT الحية
+  final List<FlSpot> vibrationTimeSpots;  // 👈 تفعيل استقبال مصفوفة الإشارة الزمنية الحية
 
   const IndustrialChartsScreen({
     super.key, 
-    required this.isDarkMode,             // 👈 تصحيح الـ Constructor
-    required this.vibrationFftSpots,     
-    required this.vibrationTimeSpots,    
+    required isDarkMode,
+    required this.vibrationFftSpots,     // 👈 إضافة البرامتر الإلزامي الأول
+    required this.vibrationTimeSpots,    // 👈 إضافة البرامتر الإلزامي الثاني
   });
 
   @override
@@ -34,11 +31,8 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
   int _currentTabIndex = 0;
   String _activeAnalysisTab = 'vibration';
   String _currentSimulationMode = 'normal';
-  Timer? _analysisTimer;
-  double _time = 0;
-  final math.Random _random = math.Random();
 
-  // مصفوفات التيار والحرارة الافتراضية
+  // مصفوفات البيانات الحقيقية للحالة الحالية ودرجة الحرارة يجب أن تُغذى من مصدر التليمتري.
   final List<FlSpot> _currentHarmonicSpots   = [];
   final List<FlSpot> _thermalSimulationSpots = [];
 
@@ -54,54 +48,11 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeHighResData();
-    _startLiveAnalysisSimulation();
   }
 
   @override
   void dispose() {
-    _analysisTimer?.cancel();
     super.dispose();
-  }
-
-  // ════════════════════════════════════════════════════════════
-  //  تهيئة البيانات (للتيار والحرارة فقط حالياً)
-  // ════════════════════════════════════════════════════════════
-  void _initializeHighResData() {
-    for (int i = 0; i < 256; i++) {
-      double freq = i * 1.0;
-      double amp = (freq == 50)  ? 13.7 :
-                   (freq == 100) ? 0.45 :
-                   (freq == 150) ? 1.85 :
-                   (freq == 250) ? 0.65 : _random.nextDouble() * 0.04;
-      _currentHarmonicSpots.add(FlSpot(freq, amp));
-    }
-    for (int i = 0; i < 60; i++) {
-      _thermalSimulationSpots.add(
-          FlSpot(i * 0.5, 62.0 + (i * 0.1) + _random.nextDouble() * 0.1));
-    }
-  }
-
-  // ════════════════════════════════════════════════════════════
-  //  محاكاة حية (مخصصة للتيار والحرارة فقط)
-  // ════════════════════════════════════════════════════════════
-  void _startLiveAnalysisSimulation() {
-    _analysisTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (!mounted) return;
-      setState(() {
-        _time += 0.2;
-        
-        for (int i = 0; i < _currentHarmonicSpots.length; i++) {
-          double f = _currentHarmonicSpots[i].x;
-          if (f == 50)  _currentHarmonicSpots[i] = FlSpot(f, 13.7 + math.sin(_time) * 0.15);
-          if (f == 150) _currentHarmonicSpots[i] = FlSpot(f, 1.85 + math.cos(_time * 2) * 0.08);
-        }
-        _thermalSimulationSpots.removeAt(0);
-        double nextX = _thermalSimulationSpots.last.x + 0.5;
-        _thermalSimulationSpots.add(FlSpot(nextX,
-            68.5 + math.sin(nextX * 0.05) * 0.4 + _random.nextDouble() * 0.05));
-      });
-    });
   }
 
   @override
@@ -293,18 +244,22 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
     );
   }
 
+  // ════════════════════════════════════════════════════════════
+  //  Analysis Views Router — قراءة مصفوفات السيمولينك الحية عبر widget.
+  // ════════════════════════════════════════════════════════════
   Widget _buildSelectedAnalysisView(Color cardBg, Color borderBg, Color textMain, Color textSub) {
     switch (_activeAnalysisTab) {
       case 'vibration':
         final double currentVibrationValue = widget.vibrationTimeSpots.isNotEmpty 
             ? widget.vibrationTimeSpots.last.y.abs() 
-            : 1.2; 
+            : 0.0;
 
         return _buildDualLayout(
           title: _t('chart_fft_title'), subtitle: _t('chart_fft_sub'),
           cardBg: cardBg, borderBg: borderBg,
           textMain: textMain, textSub: textSub,
           mainChartsArea: Column(children: [
+            // 📊 المنحنى الأول: طيف الترددات FFT المربوط بالسيمولينك
             Expanded(
               flex: 6,
               child: _buildFFTChart(
@@ -314,21 +269,22 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            // 📡 المنحنى الثاني: الإشارة الزمنية المربوطة بالسيمولينك
             Expanded(
               flex: 4,
               child: _buildTimeWaveformChart(
                 borderBg: borderBg,
                 textSub: textSub,
-                spots: widget.vibrationTimeSpots, 
+                spots: widget.vibrationTimeSpots, // 👈 تم التحديث لقراءة الـ widget الحقيقي
               ),
             ),
           ]),
           sidePanel: _buildPeaksTable(
             borderBg: borderBg, textMain: textMain, textSub: textSub,
             rows: [
-              _buildPeakRow('45.0',  (currentVibrationValue * 1.45).toStringAsFixed(2), 'BPF (Bearing Pass Freq)', textSub),
-              _buildPeakRow('90.0',  (currentVibrationValue * 0.52).toStringAsFixed(2), '2× BPF Harmonic',         textSub),
-              _buildPeakRow('135.0', (currentVibrationValue * 0.21).toStringAsFixed(2), '3× BPF Harmonic',         textSub),
+              _buildPeakRow('45.0',  (currentVibrationValue * 0.85).toStringAsFixed(2), 'BPF (Bearing Pass Freq)', textSub),
+              _buildPeakRow('90.0',  (currentVibrationValue * 0.40).toStringAsFixed(2), '2× BPF Harmonic',         textSub),
+              _buildPeakRow('135.0', (currentVibrationValue * 0.15).toStringAsFixed(2), '3× BPF Harmonic',         textSub),
               _buildPeakRow('11.2',  currentVibrationValue.toStringAsFixed(2),            'Overall RMS Severity',   textSub),
             ],
           ),
@@ -394,9 +350,9 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: 3, child: mainChartsArea),
+                Expanded(flex: 6, child: mainChartsArea),
                 const SizedBox(width: 14),
-                Expanded(flex: 1, child: sidePanel),
+                Expanded(flex: 4, child: sidePanel),
               ],
             ),
           ),
@@ -407,7 +363,6 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
 
   Widget _buildFFTChart({required Color borderBg, required Color textSub, required List<FlSpot> spots}) {
     return LineChart(LineChartData(
-      clipData: const FlClipData.all(),
       minX: 0, maxX: 160, minY: 0, maxY: 2.3,
       gridData: FlGridData(show: true, drawVerticalLine: true,
         getDrawingHorizontalLine: (v) => FlLine(color: borderBg.withOpacity(0.3)),
@@ -433,104 +388,32 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
     ));
   }
 
-// ════════════════════════════════════════════════════════════
-  // 📊 المنطق المطور: تمدد الإشارة أولاً ثم الزحف التلقائي بعد 0.5 ثانية
-  // ════════════════════════════════════════════════════════════
   Widget _buildTimeWaveformChart({required Color borderBg, required Color textSub, required List<FlSpot> spots}) {
-    if (spots.isEmpty) {
-      return const Center(child: Text('No Live Telemetry Data', style: TextStyle(color: Colors.white24, fontSize: 10)));
-    }
-
-    // 1️⃣ أخذ كمية كافية من النقاط (Buffer لآخر 400 نقطة لضمان استقرار حركة التردد العالي)
-    List<FlSpot> recentSpots = spots.length > 1000 
-        ? spots.sublist(spots.length - 1000) 
-        : List.from(spots);
-
-    // 2️⃣ تصفير المحور الزمني بناءً على أول نقطة بدأت
-    double firstTimestamp = recentSpots.first.x;
-    List<FlSpot> normalizedSpots = recentSpots.map((spot) {
-      double normalizedX = spot.x - firstTimestamp;
-      
-      // حماية تحويل الملي ثانية إلى ثوانٍ إذا كانت الأرقام كبيرة
-      if (firstTimestamp > 100.0) {
-        normalizedX = normalizedX / 1000.0;
-      }
-      return FlSpot(normalizedX, spot.y);
-    }).toList();
-
-    // 3️⃣ حساب نقاط البداية والنهاية الحقيقية للبيانات الحالية
-    double latestX = normalizedSpots.last.x;
-
-    double currentMinX = 0.0;
-    double currentMaxX = 0.5; // تثبيت الحدود الافتراضية عند نصف ثانية
-
-    // 🔥 الـ Logic السحري المطلوب:
-    // إذا تجاوزت القراءات الحية عتبة الـ 0.5 ثانية، يبدأ المحور بالزحف للأمام
-    if (latestX > 0.5) {
-      currentMaxX = latestX;
-      currentMinX = latestX - 0.5; // يزحف المحور السفلي ليحافظ على نافذة عرض قيمتها 0.5 ثانية دائماً
-    }
-
-    // تثبيت مسافات الأرقام أسفل المحور (كل 0.1 ثانية يظهر رقم نظيف)
-    double dynamicInterval = 0.1;
-
     return LineChart(LineChartData(
-      clipData: const FlClipData.all(), // حظر خروج الإشارة خارج المربع نهائياً
-      minX: currentMinX, 
-      maxX: currentMaxX,
-      minY: -5, 
-      maxY: 5,
-      gridData: FlGridData(
-        show: true,
-        getDrawingHorizontalLine: (v) => FlLine(color: borderBg.withOpacity(0.15)),
-        getDrawingVerticalLine:   (v) => FlLine(color: borderBg.withOpacity(0.15)),
-      ),
+      minX: spots.isNotEmpty ? spots.first.x : 0, 
+      maxX: spots.isNotEmpty ? spots.last.x : 1,
+      minY: -0.7, maxY: 0.7,
+      gridData: FlGridData(show: true,
+        getDrawingHorizontalLine: (v) => FlLine(color: borderBg.withOpacity(0.2)),
+        getDrawingVerticalLine:   (v) => FlLine(color: borderBg.withOpacity(0.2))),
       titlesData: FlTitlesData(
         rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         topTitles:   const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true, 
-            reservedSize: 22,
-            interval: dynamicInterval, 
-            getTitlesWidget: (v, _) {
-              // حماية لعدم إظهار أرقام خارج النطاق الفعلي الحالي لمنع تداخل النصوص
-              if (v < currentMinX || v > currentMaxX) return const SizedBox.shrink();
-              
-              return Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Text(
-                  '${v.toStringAsFixed(1)}s', // منزلة عشرية واحدة لعرض (0.1s, 0.2s, 0.3s...) بنقاء تام
-                  style: TextStyle(color: textSub, fontSize: 8, fontFamily: 'Courier', fontWeight: FontWeight.bold),
-                ),
-              );
-            },
-          ),
-        ),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true, 
-            reservedSize: 30, 
-            getTitlesWidget: (v, _) => Text('${v.toStringAsFixed(1)}', style: TextStyle(color: textSub, fontSize: 8)),
-          ),
-        ),
+        bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (v, _) => Text('${(v * 1000).toInt()}ms', style: TextStyle(color: textSub, fontSize: 8)))),
+        leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, _) => Text('${v.toStringAsFixed(2)}g', style: TextStyle(color: textSub, fontSize: 8)))),
       ),
       borderData: FlBorderData(show: true, border: Border.all(color: borderBg, width: 1.5)),
-      lineBarsData: [
-        LineChartBarData(
-          spots: normalizedSpots,
-          isCurved: false, // مستقيم لسرعة الأداء مع الترددات العالية للإهتزاز
-          color: cyan.withOpacity(0.9), 
-          barWidth: 1.2, 
-          dotData: const FlDotData(show: false),
-        )
-      ],
+      lineBarsData: [LineChartBarData(
+        spots: spots,
+        isCurved: true,
+        color: cyan.withOpacity(0.8), barWidth: 1.2,
+        dotData: const FlDotData(show: false),
+      )],
     ));
   }
-
+  
   Widget _buildBaseSingleChart({required List<FlSpot> spots, required Color color, required Color borderBg, required Color textSub, required double minX, required double maxX, required double minY, required double maxY, required String xUnit, required String yUnit, required List<double> verticalMarkers}) {
     return LineChart(LineChartData(
-      clipData: const FlClipData.all(),
       minX: minX, maxX: maxX, minY: minY, maxY: maxY,
       gridData: FlGridData(show: true,
         getDrawingHorizontalLine: (v) => FlLine(color: borderBg.withOpacity(0.3)),
@@ -565,7 +448,7 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
           Row(children: [
             Icon(Icons.gavel_rounded, color: vibColor, size: 12),
             const SizedBox(width: 6),
-            Text(_t('peaks_table_title'), style: TextStyle(color: textMain, fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+            Text(_t('peaks_table_title'), style: TextStyle(color: textMain, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
           ]),
           const SizedBox(height: 8),
           Expanded(
@@ -573,15 +456,15 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
               child: Theme(
                 data: Theme.of(context).copyWith(dividerColor: borderBg.withOpacity(0.3)),
                 child: DataTable(
-                  columnSpacing: 6,
+                  columnSpacing: 8,
                   horizontalMargin: 2,
                   headingRowHeight: 28,
                   dataRowMinHeight: 32,
                   dataRowMaxHeight: 40,
                   columns: [
-                    DataColumn(label: Text(_t('col_freq'), style: TextStyle(color: textSub, fontSize: 8.5, fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text(_t('col_amp'), style: TextStyle(color: textSub, fontSize: 8.5, fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text(_t('col_diag'), style: TextStyle(color: textSub, fontSize: 8.5, fontWeight: FontWeight.bold))),
+                    DataColumn(label: Text(_t('col_freq'), style: TextStyle(color: textSub, fontSize: 9, fontWeight: FontWeight.bold))),
+                    DataColumn(label: Text(_t('col_amp'), style: TextStyle(color: textSub, fontSize: 9, fontWeight: FontWeight.bold))),
+                    DataColumn(label: Text(_t('col_diag'), style: TextStyle(color: textSub, fontSize: 9, fontWeight: FontWeight.bold))),
                   ],
                   rows: rows,
                 ),
@@ -595,9 +478,9 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
 
   DataRow _buildPeakRow(String freq, String amp, String diagnosis, Color textSub) {
     return DataRow(cells: [
-      DataCell(Text(freq, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold, fontFamily: 'Courier'))),
-      DataCell(Text(amp, style: TextStyle(color: vibColor, fontSize: 9.5, fontWeight: FontWeight.w900, fontFamily: 'Courier'))),
-      DataCell(Text(diagnosis, style: TextStyle(color: textSub, fontSize: 8.5, fontStyle: FontStyle.italic))),
+      DataCell(Text(freq, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, fontFamily: 'Courier'))),
+      DataCell(Text(amp, style: TextStyle(color: vibColor, fontSize: 10, fontWeight: FontWeight.w900, fontFamily: 'Courier'))),
+      DataCell(Text(diagnosis, style: TextStyle(color: textSub, fontSize: 9, fontStyle: FontStyle.italic))),
     ]);
   }
 }

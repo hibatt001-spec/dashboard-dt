@@ -1,5 +1,4 @@
 //import 'package:digital_twin_control_center/features/auth/screens/loading_screen.dart';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -16,6 +15,7 @@ import '../../../core/models/kpi_history.dart';
 import '../../../core/services/history_service.dart';
 import 'mqtt_service.dart';
 import 'package:digital_twin_control_center/features/auth/screens/login_screen.dart';
+import 'dart:async'; // 👈 أضيفي هذا السطر في أعلى الملف مع الـ imports
 
 // ═══════════════════════════════════════════════════════════════
 //  CyberSparklinePainter — top-level class
@@ -92,9 +92,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double vibrationValue = 0.0;
   double temperatureValue = 0.0;
   double currentValue = 0.0;
-
+  
   
   late MqttService _mqttService;
+  Timer? _watchdogTimer;
+  DateTime? _lastSimulinkPacketTime;
+  double _chartElapsedTime = 0.0;
 
   // History tracking variables
   DateTime? _lastSavedTime;
@@ -112,43 +115,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // قوائم لاستقبال ورسم منحنيات الـ FFT الترددية
   List<FlSpot> vibFftSpots = [];
   List<FlSpot> currentFftSpots = [];
-  // 📊 قوائم الاهتزاز الديناميكية
-  List<FlSpot> vibrationTimeSpots = []; // للمنحنى الزمني السفلي
-  List<FlSpot> vibrationFftSpots = [];  // لمنحنى الـ FFT العلوي
 
   // متغيرات لحساب القمم (Peaks) ديناميكياً لتحديث الجدول الجانبي
   double peak1Freq = 45.0, peak1Val = 0.0;
   double peak2Freq = 90.0, peak2Val = 0.0;
   double peak3Freq = 135.0, peak3Val = 0.0;
 
-
-  int timeCounter = 0;
-
-  // 🎯 توليد طيف FFT واقعي محلياً بناءً على شدة الاهتزاز الحقيقية القادمة من سيمولينك
-  // يبني قمم عند 45Hz (BPF) و90Hz (2×BPF) و135Hz (3×BPF) تتحرك حسب vib
-  List<FlSpot> _generateSimulatedFft(double vib) {
-    final List<FlSpot> spots = [];
-    final double severity = vib.clamp(0.0, 10.0);
-
-    // ضوضاء أساسية منخفضة عبر كل الترددات
-    double baseline(double f) => 0.02 + 0.01 * math.sin(f * 0.3);
-
-    // دالة قمة غاوسية حول تردد معين
-    double peak(double f, double center, double amplitude, double width) {
-      final double d = (f - center) / width;
-      return amplitude * math.exp(-d * d);
-    }
-
-    for (double f = 0; f <= 160; f += 2) {
-      double y = baseline(f);
-      y += peak(f, 45, severity * 0.22, 3.5);   // BPF
-      y += peak(f, 90, severity * 0.10, 3.5);   // 2×BPF
-      y += peak(f, 135, severity * 0.04, 3.5);  // 3×BPF
-      y += peak(f, 11.2, severity * 0.26, 2.0); // اهتزاز عام منخفض التردد
-      spots.add(FlSpot(f, y.clamp(0.0, 2.3)));
-    }
-    return spots;
-  }
 
   // Helper method for history saving
   void _checkAndSaveHistory() {
@@ -543,18 +515,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           // الأزرار والمؤشرات اليمنى
           Row(
             children: [
-              // 🌐 1. مؤشر حالة سيرفر الـ MQTT المتغير ديناميكياً
-              _statusDot(
-                isMqttConnected ? t('mqtt_on') : t('mqtt_off'),
-                isMqttConnected ? successGreen : Colors.red,
-              ),
-
-              const SizedBox(width: 8),
-
-              // 🟢🔴 2. مؤشر حالة الـ Simulink المتغير ديناميكياً
+              
+              // 🟢⚪ 2. مؤشر حالة الـ Simulink المتغير ديناميكياً
               _statusDot(
                 isSimulinkConnected ? t('simulink_on') : t('simulink_off'), 
-                isSimulinkConnected ? successGreen : Colors.red, // أخضر عند العمل، أحمر عند التوقف
+                isSimulinkConnected ? successGreen : Colors.grey, // أخضر عند العمل، رمادي عند التوقف
               ),
               
               const SizedBox(width: 8),
@@ -1171,78 +1136,137 @@ Widget _buildMotorStatusHeader({
       ],
     );
   }
-  // NOTE: dispose is implemented later to handle all disconnections.
- //════════════════════════════════════════════════════════════
+    //o════════════════════════════════════════════════════════════
   //  STATE LIFECYCLE (INIT, DISPOSE & LIVE TELEMETRY COUPLING)
+  // ════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════
+  //  STATE LIFECYCLE (تحديث الـ initState المضمون للربط مع MQTT)
   // ════════════════════════════════════════════════════════════
   @override
   void initState() {
     super.initState();
 
-      // 1️⃣ إعداد الـ ربط الحي مع سيرفر الـ MQTT الخاص بـ Feedcom قابس
-      _mqttService = MqttService(
+    isMqttConnected = false;
+    isSimulinkConnected = false;
+    _lastSimulinkPacketTime = null;
+
+    _mqttService = MqttService(
+      onMqttStatusChanged: (bool mqttConnected) {
+        if (mounted) {
+          setState(() {
+            isMqttConnected = mqttConnected;
+          });
+        }
+      },
+      onStatusChanged: (bool isConnected) {
+        if (mounted) {
+          setState(() {
+            isSimulinkConnected = isConnected;
+          });
+        }
+      },
+      // 🔥 الربط المباشر النظيف: استقبال البيانات الصافية من بايثون
+      onTelemetryReceived: (double temp, double vib, double current) {
+        _lastSimulinkPacketTime = DateTime.now(); // إحياء نبضة الحياة فوراً
         
-        onMqttStatusChanged: (bool mqttConnected) {
-          if (mounted) {
-            setState(() {
-              isMqttConnected = mqttConnected;
-            });
-          }
-        },
-        onStatusChanged: (bool isConnected) {
-          // تحديث مؤشر الـ Simulink في الشريط العلوي ديناميكياً
-          if (mounted) {
-            setState(() {
-              isSimulinkConnected = isConnected;
-            });
-          }
-        },
-        onTelemetryReceived: (double temp, double vib, double current) {
-          // 2️⃣ استقبال البيانات اللحظية القادمة من السيمولينك وضخها في واجهة الـ Flutter
-          if (mounted) {
-            setState(() {
-              // تحديث القيم الرقمية للكروت العائمة والمؤشرات
-              temperatureValue = temp;
-              vibrationValue = vib;
-              currentValue = current;
-              
-              currentTemperature = temp;
-              currentVibration = vib;
-              currentCurrent = current;
-              
-              // حساب سرعة الدوران التقريبية ديناميكياً بناءً على التردد وحالة المحرك
-              if (current > 0.5) {
-                currentRPM = (1500.0 - (vib * 12) - (temp * 0.4)).clamp(1380.0, 1485.0);
-              } else {
-                currentRPM = 0.0;
-              }
+        if (mounted) {
+          setState(() {
+            isSimulinkConnected = true; 
+            
+            // ضخ القراءات الحية في المتغيرات المركزية للتطبيق
+            vibrationValue = vib;
+            currentValue = current;
+            temperatureValue = temp;
+            
+            currentTemperature = temp;
+            currentVibration = vib;
+            currentCurrent = current;
+            
+            _chartElapsedTime += 0.2;
+            vibSpots.add(FlSpot(_chartElapsedTime, vib));
+            tempSpots.add(FlSpot(_chartElapsedTime, temp));
+            currentSpots.add(FlSpot(_chartElapsedTime, current));
 
-              // 📊 تحديث مصفوفة المنحنى الزمني (Vibration Time Waveform)
-              // 📊 توليد دفعة نقاط عشوائية حول القيمة الحقيقية (vib) لتقليد شكل الموجة الخام من سيمولينك
-              // (سيمولينك يبعث موجة كاملة، أما الـ MQTT يبعث قيمة لحظية واحدة فقط، فنحاكي الشكل هنا)
-              final math.Random rnd = math.Random();
-              for (int i = 0; i < 5; i++) {
-                timeCounter++;
-                double noisy = vib + (rnd.nextDouble() * 2 - 1) * (vib.abs() + 0.5) * 1.2;
-                vibSpots.add(FlSpot(timeCounter.toDouble(), noisy));
-              }
-              if (vibSpots.length > 300) {
-                vibSpots.removeRange(0, vibSpots.length - 300); // الحفاظ على آخر 300 نقطة فقط لمنع بطء التطبيق
-              }
+            if (vibSpots.length > 50) vibSpots.removeAt(0);
+            if (tempSpots.length > 50) tempSpots.removeAt(0);
+            if (currentSpots.length > 50) currentSpots.removeAt(0);
 
-              // 🎯 توليد مصفوفة FFT محلياً (Simulated) بناءً على شدة الاهتزاز الحقيقية
-              // لأن سيمولينك يبعث بس 3 قيم فيزيائية، الـ FFT نحسبها هنا في Flutter
-              vibFftSpots = _generateSimulatedFft(vib);
+            vibFftSpots = _generateVibrationFftSpots(vib);
+            currentFftSpots = _generateCurrentFftSpots(current);
 
-              // تشغيل خوارزمية حفظ الأرشيف التاريخي والـ KPIs
-              _checkAndSaveHistory();
-            });
-          }
-        },
-      );
+            if (current > 0.5) {
+              currentRPM = (1500.0 - (vib * 12) - (temp * 0.4)).clamp(1380.0, 1485.0);
+            } else {
+              currentRPM = 0.0;
+            }
+          });
+        }
+      },
+    );
 
-      // 3️⃣ إطلاق أمر الاتصال الفوري بالسيرفر السحابي عند فتح التطبيق
-      _connectToMqttTwin();
+    _connectToMqttTwin();
+
+    // تشغيل الـ Watchdog لمراقبة اتصال Simulink فقط
+    _startSimulinkWatchdog();
+  }
+
+  // ════════════════════════════════════════════════════════════
+  //  THE CORRECT WATCHDOG TIMER (الـ تيمر المصلح والذكي)
+  // ════════════════════════════════════════════════════════════
+  void _startSimulinkWatchdog() {
+    _watchdogTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (!mounted) return;
+
+      final bool recentlyReceived = _lastSimulinkPacketTime != null &&
+          DateTime.now().difference(_lastSimulinkPacketTime!).inSeconds <= 5;
+
+      if (!recentlyReceived && isSimulinkConnected) {
+        setState(() {
+          isSimulinkConnected = false;
+        });
+      }
+    });
+  }
+
+
+  List<FlSpot> _generateVibrationFftSpots(double vib) {
+    final List<FlSpot> spots = [];
+    for (int i = 0; i <= 40; i++) {
+      final double freq = i * 4.0;
+      final double amplitude;
+      if (freq == 45) {
+        amplitude = vib * 0.85 + 0.2;
+      } else if (freq == 90) {
+        amplitude = vib * 0.40 + 0.12;
+      } else if (freq == 135) {
+        amplitude = vib * 0.15 + 0.08;
+      } else if (freq == 50 || freq == 100 || freq == 150) {
+        amplitude = vib * 0.05 + 0.04;
+      } else {
+        amplitude = 0.02 + (vib * 0.006);
+      }
+      spots.add(FlSpot(freq, amplitude));
+    }
+    return spots;
+  }
+
+  List<FlSpot> _generateCurrentFftSpots(double current) {
+    final List<FlSpot> spots = [];
+    for (int i = 0; i <= 40; i++) {
+      final double freq = i * 4.0;
+      final double amplitude;
+      if (freq == 50) {
+        amplitude = current * 0.65 + 0.25;
+      } else if (freq == 100) {
+        amplitude = current * 0.30 + 0.15;
+      } else if (freq == 150) {
+        amplitude = current * 0.18 + 0.08;
+      } else {
+        amplitude = 0.03 + (current * 0.01);
+      }
+      spots.add(FlSpot(freq, amplitude));
+    }
+    return spots;
   }
 
   Future<void> _connectToMqttTwin() async {
@@ -1250,24 +1274,20 @@ Widget _buildMotorStatusHeader({
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // عمل كاش للصورة لضمان تحميل الموديل بسلاسة
-    precacheImage(const AssetImage('assets/images/motor.png'), context);
-  }
-
-  @override
   void dispose() {
-    // 🛡️ قطع الاتصال بشكل آمن عند الخروج لحماية موارد الجهاز والسيرفر
+    // 🛡️ تأمين الموارد: إغلاق المؤقت وقطع اتصال الـ MQTT بشكل سليم
+    _watchdogTimer?.cancel();
     _mqttService.disconnect();
     super.dispose();
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  TelemetrySparklinePainter — الرسام الخاص بالكروت المصغرة
+// ═══════════════════════════════════════════════════════════════
 class TelemetrySparklinePainter extends CustomPainter {
   final List<double> dataPoints;
   final Color color;
-
   final bool isDark;
 
   TelemetrySparklinePainter({

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+/*import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 class VibrationDetailsWindow extends StatefulWidget {
@@ -276,4 +276,4 @@ class _VibrationDetailsWindowState extends State<VibrationDetailsWindow> {
       textAlign: TextAlign.center,
     );
   }
-}
+}*/

@@ -1218,16 +1218,10 @@ Widget _buildMotorStatusHeader({
               }
 
               // 📊 تحديث مصفوفة المنحنى الزمني (Vibration Time Waveform)
-              // 📊 توليد دفعة نقاط عشوائية حول القيمة الحقيقية (vib) لتقليد شكل الموجة الخام من سيمولينك
-              // (سيمولينك يبعث موجة كاملة، أما الـ MQTT يبعث قيمة لحظية واحدة فقط، فنحاكي الشكل هنا)
-              final math.Random rnd = math.Random();
-              for (int i = 0; i < 5; i++) {
-                timeCounter++;
-                double noisy = vib + (rnd.nextDouble() * 2 - 1) * (vib.abs() + 0.5) * 1.2;
-                vibSpots.add(FlSpot(timeCounter.toDouble(), noisy));
-              }
-              if (vibSpots.length > 300) {
-                vibSpots.removeRange(0, vibSpots.length - 300); // الحفاظ على آخر 300 نقطة فقط لمنع بطء التطبيق
+              timeCounter++;
+              vibSpots.add(FlSpot(timeCounter.toDouble(), vib));
+              if (vibSpots.length > 50) {
+                vibSpots.removeAt(0); // الحفاظ على آخر 50 نقطة فقط لمنع بطء التطبيق
               }
 
               // 🎯 توليد مصفوفة FFT محلياً (Simulated) بناءً على شدة الاهتزاز الحقيقية

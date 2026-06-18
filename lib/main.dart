@@ -4,6 +4,7 @@ import 'firebase_options.dart';
 import 'core/theme.dart';
 import 'features/auth/screens/loading_screen.dart';
 import 'core/services/history_service.dart';
+import 'features/auth/screens/login_screen.dart'; // 👈 تأكدي من صحة مسار الـ Login لديكِ
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier<ThemeMode>(ThemeMode.light);
 final ValueNotifier<String> languageNotifier = ValueNotifier<String>('fr');
@@ -11,7 +12,9 @@ final ValueNotifier<String> currentSimulationModeNotifier = ValueNotifier<String
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   await HistoryService.init();
   runApp(const MyApp());
 }
@@ -33,9 +36,10 @@ class MyApp extends StatelessWidget {
               theme: AppTheme.lightTheme,
               darkTheme: AppTheme.darkTheme,
               themeMode: currentMode,
-
+              locale: Locale(currentLang),
+              home: const LoginScreen(), // 👈 التوجيه المباشر والواضح هنا لمنع الصفحة البيضاء
               // 🚀 التعديل هنا: التطبيق يقلع دائماً من شاشة التحميل أولاً
-              home: const LoadingScreen(), 
+              //home: const LoadingScreen(), 
             );
           },
         );
