@@ -307,10 +307,10 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
           mainChartsArea: Column(children: [
             Expanded(
               flex: 6,
-              child: _buildFFTChart(
+              child: _buildFftSpectrumChart(
                 borderBg: borderBg,
                 textSub: textSub,
-                spots: widget.vibrationFftSpots,
+                fftSpots: widget.vibrationFftSpots,
               ),
             ),
             const SizedBox(height: 12),
@@ -405,103 +405,40 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
     );
   }
 
-  Widget _buildFFTChart({required Color borderBg, required Color textSub, required List<FlSpot> spots}) {
-    return LineChart(LineChartData(
-      clipData: const FlClipData.all(),
-      minX: 0, maxX: 160, minY: 0, maxY: 2.3,
-      gridData: FlGridData(show: true, drawVerticalLine: true,
-        getDrawingHorizontalLine: (v) => FlLine(color: borderBg.withOpacity(0.3)),
-        getDrawingVerticalLine:   (v) => FlLine(color: borderBg.withOpacity(0.3))),
-      titlesData: FlTitlesData(
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        topTitles:   const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (v, _) => Text('${v.toInt()}Hz', style: TextStyle(color: textSub, fontSize: 8)))),
-        leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, _) => Text('${v.toStringAsFixed(1)}mm/s', style: TextStyle(color: textSub, fontSize: 8)))),
-      ),
-      borderData: FlBorderData(show: true, border: Border.all(color: borderBg, width: 1.5)),
-      extraLinesData: ExtraLinesData(verticalLines: [
-        VerticalLine(x: 45, color: Colors.orangeAccent, strokeWidth: 1.5, dashArray: [4, 4], label: VerticalLineLabel(show: true, alignment: Alignment.topRight, labelResolver: (_) => '45Hz [BPF]')),
-        VerticalLine(x: 90, color: Colors.amber, strokeWidth: 1.2, dashArray: [4, 4], label: VerticalLineLabel(show: true, alignment: Alignment.topRight, labelResolver: (_) => '90Hz [2×BPF]')),
-      ]),
-      lineBarsData: [LineChartBarData(
-        spots: spots,
-        isCurved: false,
-        color: vibColor, barWidth: 1.5,
-        dotData: const FlDotData(show: false),
-        belowBarData: BarAreaData(show: true, color: vibColor.withOpacity(0.08)),
-      )],
-    ));
+  Widget _buildFftSpectrumChart({
+  required Color borderBg,
+  required Color textSub,
+  required List<FlSpot> fftSpots,
+}) {
+  if (fftSpots.isEmpty) {
+    return const Center(child: Text('No FFT Spectrum Data', style: TextStyle(color: Colors.white24, fontSize: 10)));
   }
 
-// ════════════════════════════════════════════════════════════
-  // 📊 المنطق المطور: تمدد الإشارة أولاً ثم الزحف التلقائي بعد 0.5 ثانية
-  // ════════════════════════════════════════════════════════════
-  Widget _buildTimeWaveformChart({required Color borderBg, required Color textSub, required List<FlSpot> spots}) {
-    if (spots.isEmpty) {
-      return const Center(child: Text('No Live Telemetry Data', style: TextStyle(color: Colors.white24, fontSize: 10)));
-    }
-
-    // 1️⃣ أخذ كمية كافية من النقاط (Buffer لآخر 400 نقطة لضمان استقرار حركة التردد العالي)
-    List<FlSpot> recentSpots = spots.length > 1000 
-        ? spots.sublist(spots.length - 1000) 
-        : List.from(spots);
-
-    // 2️⃣ تصفير المحور الزمني بناءً على أول نقطة بدأت
-    double firstTimestamp = recentSpots.first.x;
-    List<FlSpot> normalizedSpots = recentSpots.map((spot) {
-      double normalizedX = spot.x - firstTimestamp;
-      
-      // حماية تحويل الملي ثانية إلى ثوانٍ إذا كانت الأرقام كبيرة
-      if (firstTimestamp > 100.0) {
-        normalizedX = normalizedX / 1000.0;
-      }
-      return FlSpot(normalizedX, spot.y);
-    }).toList();
-
-    // 3️⃣ حساب نقاط البداية والنهاية الحقيقية للبيانات الحالية
-    double latestX = normalizedSpots.last.x;
-
-    double currentMinX = 0.0;
-    double currentMaxX = 0.5; // تثبيت الحدود الافتراضية عند نصف ثانية
-
-    // 🔥 الـ Logic السحري المطلوب:
-    // إذا تجاوزت القراءات الحية عتبة الـ 0.5 ثانية، يبدأ المحور بالزحف للأمام
-    if (latestX > 0.5) {
-      currentMaxX = latestX;
-      currentMinX = latestX - 0.5; // يزحف المحور السفلي ليحافظ على نافذة عرض قيمتها 0.5 ثانية دائماً
-    }
-
-    // تثبيت مسافات الأرقام أسفل المحور (كل 0.1 ثانية يظهر رقم نظيف)
-    double dynamicInterval = 0.1;
-
-    return LineChart(LineChartData(
-      clipData: const FlClipData.all(), // حظر خروج الإشارة خارج المربع نهائياً
-      minX: currentMinX, 
-      maxX: currentMaxX,
-      minY: -5, 
-      maxY: 5,
+  return LineChart(
+    LineChartData(
+      clipData: const FlClipData.all(),
+      minX: 0,
+      maxX: 500, // النطاق الترددي الميكانيكي الفعلي حتى 500 هرتز كما في صورتكِ
+      minY: 0,
+      maxY: 100, // سعة القمم الاهتزازية (Amplitude)
       gridData: FlGridData(
         show: true,
-        getDrawingHorizontalLine: (v) => FlLine(color: borderBg.withOpacity(0.15)),
-        getDrawingVerticalLine:   (v) => FlLine(color: borderBg.withOpacity(0.15)),
+        drawVerticalLine: true,
+        getDrawingHorizontalLine: (value) => FlLine(color: borderBg.withOpacity(0.12), strokeWidth: 1),
+        getDrawingVerticalLine: (value) => FlLine(color: borderBg.withOpacity(0.12), strokeWidth: 1),
       ),
       titlesData: FlTitlesData(
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        topTitles:   const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
-            showTitles: true, 
+            showTitles: true,
             reservedSize: 22,
-            interval: dynamicInterval, 
-            getTitlesWidget: (v, _) {
-              // حماية لعدم إظهار أرقام خارج النطاق الفعلي الحالي لمنع تداخل النصوص
-              if (v < currentMinX || v > currentMaxX) return const SizedBox.shrink();
-              
+            interval: 100, // خط تدريج ومؤشر كل 100 هرتز (0, 100, 200, 300, 400, 500)
+            getTitlesWidget: (value, meta) {
               return Padding(
                 padding: const EdgeInsets.only(top: 4.0),
                 child: Text(
-                  '${v.toStringAsFixed(1)}s', // منزلة عشرية واحدة لعرض (0.1s, 0.2s, 0.3s...) بنقاء تام
-                  style: TextStyle(color: textSub, fontSize: 8, fontFamily: 'Courier', fontWeight: FontWeight.bold),
+                  '${value.toStringAsFixed(0)}Hz', // العرض بالهرتز (Hz)
+                  style: TextStyle(color: textSub, fontSize: 8, fontWeight: FontWeight.bold),
                 ),
               );
             },
@@ -509,24 +446,110 @@ class _IndustrialChartsScreenState extends State<IndustrialChartsScreen> {
         ),
         leftTitles: AxisTitles(
           sideTitles: SideTitles(
-            showTitles: true, 
-            reservedSize: 30, 
-            getTitlesWidget: (v, _) => Text('${v.toStringAsFixed(1)}', style: TextStyle(color: textSub, fontSize: 8)),
+            showTitles: true,
+            reservedSize: 28,
+            getTitlesWidget: (value, meta) => Text(
+              value.toStringAsFixed(0),
+              style: TextStyle(color: textSub, fontSize: 8),
+            ),
           ),
         ),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
       ),
-      borderData: FlBorderData(show: true, border: Border.all(color: borderBg, width: 1.5)),
+      borderData: FlBorderData(show: true, border: Border.all(color: borderBg.withOpacity(0.3))),
       lineBarsData: [
         LineChartBarData(
-          spots: normalizedSpots,
-          isCurved: false, // مستقيم لسرعة الأداء مع الترددات العالية للإهتزاز
-          color: cyan.withOpacity(0.9), 
-          barWidth: 1.2, 
+          spots: fftSpots,
+          isCurved: true, // منحنى انسيابي لإظهار تضاريس القمم الترددية (Vibration Peaks)
+          color: const Color(0xFFFF9F1C), // لون برتقالي مميز للـ FFT يعطي طابعاً صناعياً
+          barWidth: 1.5,
           dotData: const FlDotData(show: false),
-        )
+          belowBarData: BarAreaData(show: true, color: const Color(0xFFFF9F1C).withOpacity(0.05)),
+        ),
       ],
-    ));
+    ),
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+  // 📊 المنطق المطور: تمدد الإشارة أولاً ثم الزحف التلقائي بعد 0.5 ثانية
+  // ════════════════════════════════════════════════════════════
+ Widget _buildTimeWaveformChart({
+  required Color borderBg,
+  required Color textSub,
+  required List<FlSpot> spots,
+}) {
+  if (spots.isEmpty) {
+    return const Center(child: Text('No Live Telemetry Data', style: TextStyle(color: Colors.white24, fontSize: 10)));
   }
+
+  // تحديد عرض المحور الأفقي الثابت (مثلاً نافذة ثابتة ومريحة بطول 1.0 ثانية كاملة)
+  double minX = spots.first.x;
+  double maxX = spots.last.x;
+  
+  if (maxX - minX < 1.0) {
+    maxX = minX + 1.0;
+  }
+
+  return LineChart(
+    LineChartData(
+      clipData: const FlClipData.all(),
+      minX: minX,
+      maxX: maxX,
+      minY: -5.0,
+      maxY: 5.0,
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: true,
+        getDrawingHorizontalLine: (value) => FlLine(color: borderBg.withOpacity(0.12), strokeWidth: 1),
+        getDrawingVerticalLine: (value) => FlLine(color: borderBg.withOpacity(0.12), strokeWidth: 1),
+      ),
+      titlesData: FlTitlesData(
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 22,
+            interval: 0.2, // إظهار التدريج كل 0.2 ثانية بانتظام
+            getTitlesWidget: (value, meta) {
+              double relativeTime = value - minX;
+              if (relativeTime < 0 || relativeTime > 1.01) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 4.0),
+                child: Text(
+                  '${relativeTime.toStringAsFixed(1)}s', // يعرض 0.0s, 0.2s, 0.4s...
+                  style: TextStyle(color: textSub, fontSize: 8, fontWeight: FontWeight.bold, fontFamily: 'Courier'),
+                ),
+              );
+            },
+          ),
+        ),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 28,
+            getTitlesWidget: (value, meta) => Text(
+              value.toStringAsFixed(1),
+              style: TextStyle(color: textSub, fontSize: 8),
+            ),
+          ),
+        ),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+      ),
+      borderData: FlBorderData(show: true, border: Border.all(color: borderBg.withOpacity(0.3))),
+      lineBarsData: [
+        LineChartBarData(
+          spots: spots,
+          isCurved: false, // خطوط مستقيمة عادية وحادة لتبدو كإشارة اهتزاز حقيقية من مستشعر
+          color: vibColor,
+          barWidth: 1.5,
+          dotData: const FlDotData(show: false),
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildBaseSingleChart({required List<FlSpot> spots, required Color color, required Color borderBg, required Color textSub, required double minX, required double maxX, required double minY, required double maxY, required String xUnit, required String yUnit, required List<double> verticalMarkers}) {
     return LineChart(LineChartData(

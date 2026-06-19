@@ -123,32 +123,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 
   int timeCounter = 0;
+  DateTime? startTime;
 
   // 🎯 توليد طيف FFT واقعي محلياً بناءً على شدة الاهتزاز الحقيقية القادمة من سيمولينك
   // يبني قمم عند 45Hz (BPF) و90Hz (2×BPF) و135Hz (3×BPF) تتحرك حسب vib
-  List<FlSpot> _generateSimulatedFft(double vib) {
-    final List<FlSpot> spots = [];
-    final double severity = vib.clamp(0.0, 10.0);
+ List<FlSpot> _generateSimulatedFft(double vib) {
+  final List<FlSpot> spots = [];
+  // رفع ليميت الـ severity ليتناسب مع أبعاد الأنيميشن في الشاشة
+  final double severity = vib.clamp(0.0, 10.0) * 12.0; 
 
-    // ضوضاء أساسية منخفضة عبر كل الترددات
-    double baseline(double f) => 0.02 + 0.01 * math.sin(f * 0.3);
+  // ضوضاء أساسية منخفضة عبر كل الترددات (مرفوعة لتظهر فوق الصفر)
+  double baseline(double f) => 0.8 + 0.3 * math.sin(f * 0.3);
 
-    // دالة قمة غاوسية حول تردد معين
-    double peak(double f, double center, double amplitude, double width) {
-      final double d = (f - center) / width;
-      return amplitude * math.exp(-d * d);
-    }
-
-    for (double f = 0; f <= 160; f += 2) {
-      double y = baseline(f);
-      y += peak(f, 45, severity * 0.22, 3.5);   // BPF
-      y += peak(f, 90, severity * 0.10, 3.5);   // 2×BPF
-      y += peak(f, 135, severity * 0.04, 3.5);  // 3×BPF
-      y += peak(f, 11.2, severity * 0.26, 2.0); // اهتزاز عام منخفض التردد
-      spots.add(FlSpot(f, y.clamp(0.0, 2.3)));
-    }
-    return spots;
+  // دالة قمة غاوسية حول تردد معين
+  double peak(double f, double center, double amplitude, double width) {
+    final double d = (f - center) / width;
+    return amplitude * math.exp(-d * d);
   }
+
+  // الحساب من 0 إلى 500 هرتز ليتطابق تماماً مع الـ maxX للتشارت
+  for (double f = 0; f <= 500; f += 5) {
+    double y = baseline(f);
+    
+    // القمم الميكانيكية موزعة بذكاء ومضروبة في الـ severity لتتفاعل حياً مع المحرك
+    y += peak(f, 45, severity * 0.22, 10.0);   // BPF (Ball Pass Frequency)
+    y += peak(f, 90, severity * 0.10, 12.0);   // 2×BPF
+    y += peak(f, 135, severity * 0.04, 12.0);  // 3×BPF
+    y += peak(f, 250, severity * 0.18, 15.0);  // قمة إضافية عند الترددات المتوسطة 
+    y += peak(f, 11.2, severity * 0.26, 6.0);  // اهتزاز عام منخفض التردد
+
+    // الـ clamp الآن مضبوط على 28.0 ليتماشى مع الـ maxY: 30 الجديد للتشارت
+    spots.add(FlSpot(f, y.clamp(0.0, 2.3)));
+  }
+  return spots;
+}
 
   // Helper method for history saving
   void _checkAndSaveHistory() {
@@ -1175,75 +1183,71 @@ Widget _buildMotorStatusHeader({
  //════════════════════════════════════════════════════════════
   //  STATE LIFECYCLE (INIT, DISPOSE & LIVE TELEMETRY COUPLING)
   // ════════════════════════════════════════════════════════════
+  // 1️⃣ تعيين عداد يدوي تراكمي في أعلى الكلاس (خارج initState) إذا لم يكن معرفاً:
+  double? firstTelemetryTimestamp;
+
   @override
   void initState() {
     super.initState();
 
-      // 1️⃣ إعداد الـ ربط الحي مع سيرفر الـ MQTT الخاص بـ Feedcom قابس
-      _mqttService = MqttService(
-        
-        onMqttStatusChanged: (bool mqttConnected) {
-          if (mounted) {
-            setState(() {
-              isMqttConnected = mqttConnected;
-            });
+    // إعداد الـ ربط الحي مع سيرفر الـ MQTT الخاص بـ Feedcom قابس
+    _mqttService = MqttService(
+      onMqttStatusChanged: (bool mqttConnected) {
+        if (mounted) setState(() => isMqttConnected = mqttConnected);
+      },
+      onStatusChanged: (bool isConnected) {
+        if (mounted) setState(() => isSimulinkConnected = isConnected);
+      },
+      onTelemetryReceived: (double temp, double vib, double current) {
+        if (!mounted) return;
+        setState(() {
+          // تحديث القيم الرقمية
+          temperatureValue = temp;
+          vibrationValue = vib;
+          currentValue = current;
+          
+          currentTemperature = temp;
+          currentVibration = vib;
+          currentCurrent = current;
+          
+          if (current > 0.5) {
+            currentRPM = (1500.0 - (vib * 12) - (temp * 0.4)).clamp(1380.0, 1485.0);
+          } else {
+            currentRPM = 0.0;
           }
-        },
-        onStatusChanged: (bool isConnected) {
-          // تحديث مؤشر الـ Simulink في الشريط العلوي ديناميكياً
-          if (mounted) {
-            setState(() {
-              isSimulinkConnected = isConnected;
-            });
+
+          // 📈 2️⃣ التعديل الذهبي: زيادة العداد بخطوة ثابتة ونظيفة جداً لمنع تداخل النقاط
+          if (firstTelemetryTimestamp == null) {
+            firstTelemetryTimestamp = DateTime.now().millisecondsSinceEpoch / 1000.0;
           }
-        },
-        onTelemetryReceived: (double temp, double vib, double current) {
-          // 2️⃣ استقبال البيانات اللحظية القادمة من السيمولينك وضخها في واجهة الـ Flutter
-          if (mounted) {
-            setState(() {
-              // تحديث القيم الرقمية للكروت العائمة والمؤشرات
-              temperatureValue = temp;
-              vibrationValue = vib;
-              currentValue = current;
-              
-              currentTemperature = temp;
-              currentVibration = vib;
-              currentCurrent = current;
-              
-              // حساب سرعة الدوران التقريبية ديناميكياً بناءً على التردد وحالة المحرك
-              if (current > 0.5) {
-                currentRPM = (1500.0 - (vib * 12) - (temp * 0.4)).clamp(1380.0, 1485.0);
-              } else {
-                currentRPM = 0.0;
-              }
+          double vibrationXCounter = DateTime.now().millisecondsSinceEpoch / 1000.0 - firstTelemetryTimestamp!;
 
-              // 📊 تحديث مصفوفة المنحنى الزمني (Vibration Time Waveform)
-              // 📊 توليد دفعة نقاط عشوائية حول القيمة الحقيقية (vib) لتقليد شكل الموجة الخام من سيمولينك
-              // (سيمولينك يبعث موجة كاملة، أما الـ MQTT يبعث قيمة لحظية واحدة فقط، فنحاكي الشكل هنا)
-              final math.Random rnd = math.Random();
-              for (int i = 0; i < 5; i++) {
-                timeCounter++;
-                double noisy = vib + (rnd.nextDouble() * 2 - 1) * (vib.abs() + 0.5) * 1.2;
-                vibSpots.add(FlSpot(timeCounter.toDouble(), noisy));
-              }
-              if (vibSpots.length > 300) {
-                vibSpots.removeRange(0, vibSpots.length - 300); // الحفاظ على آخر 300 نقطة فقط لمنع بطء التطبيق
-              }
+          // إضافة النقطة بمحور X منتظم هندسياً
+          vibrationTimeSpots.add(FlSpot(vibrationXCounter, vib));
+          vibSpots.add(FlSpot(vibrationXCounter, vib));
+          tempSpots.add(FlSpot(vibrationXCounter, temp));
+          currentSpots.add(FlSpot(vibrationXCounter, current));
 
-              // 🎯 توليد مصفوفة FFT محلياً (Simulated) بناءً على شدة الاهتزاز الحقيقية
-              // لأن سيمولينك يبعث بس 3 قيم فيزيائية، الـ FFT نحسبها هنا في Flutter
-              vibFftSpots = _generateSimulatedFft(vib);
+          // 🧹 3️⃣ حماية الذاكرة: الاعتماد على عدد النقاط (FIFO) لتغطية نافذة العرض بالكامل
+          // الاحتفاظ بآخر 250 نقطة يضمن أن الكيرف مفرود ونظيف ومستحيل يرجع خط مستقيم
+          if (vibrationTimeSpots.length > 250) vibrationTimeSpots.removeAt(0);
+          if (vibSpots.length > 250) vibSpots.removeAt(0);
+          if (tempSpots.length > 250) tempSpots.removeAt(0);
+          if (currentSpots.length > 250) currentSpots.removeAt(0);
 
-              // تشغيل خوارزمية حفظ الأرشيف التاريخي والـ KPIs
-              _checkAndSaveHistory();
-            });
-          }
-        },
-      );
+          // تحديث طيف FFT استجابةً للقيم الحقيقية الأخيرة
+          vibFftSpots = _generateSimulatedFft(vib);
 
-      // 3️⃣ إطلاق أمر الاتصال الفوري بالسيرفر السحابي عند فتح التطبيق
-      _connectToMqttTwin();
+          // تشغيل خوارزمية حفظ الأرشيف التاريخي
+          _checkAndSaveHistory();
+        });
+      },
+    );
+
+    // إطلاق أمر الاتصال الفوري بالسيرفر السحابي
+    _connectToMqttTwin();
   }
+
 
   Future<void> _connectToMqttTwin() async {
     await _mqttService.connect();

@@ -1,22 +1,20 @@
 //import 'package:digital_twin_control_center/features/auth/screens/loading_screen.dart';
-import 'dart:math' as math;
+/*import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import '../../../main.dart';
 import 'industrial_charts_screen.dart';
-import 'industrial_alerts_panel.dart';
-import 'predictive_maintenance_ai_screen.dart';
 import 'app_translations.dart';
-import 'sensors_screen.dart';
 import 'historique.dart';
 import 'dart:convert'; // مهم داً لفك شفرة الـ JSON
 import '../../../core/models/kpi_history.dart';
 import '../../../core/services/history_service.dart';
 import 'mqtt_service.dart';
 import 'package:digital_twin_control_center/features/auth/screens/login_screen.dart';
-
+import 'package:provider/provider.dart';
+import 'package:fl_chart/fl_chart.dart';
 // ═══════════════════════════════════════════════════════════════
 //  CyberSparklinePainter — top-level class
 // ═══════════════════════════════════════════════════════════════
@@ -93,7 +91,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double temperatureValue = 0.0;
   double currentValue = 0.0;
 
-  
+  DateTime? sessionStartTime;
+
   late MqttService _mqttService;
 
   // History tracking variables
@@ -338,6 +337,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     subText,
                                     accentIcon,
                                     isDark,
+                                    context,
                                   ),
                                 ),
                               ),
@@ -359,54 +359,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ════════════════════════════════════════════════════════════
   //  1. SIDEBAR
   // ════════════════════════════════════════════════════════════
-  Widget _buildSidebar(
-    String Function(String) t,
-    Color bg,
-    Color borderColor,
-    Color mainText,
-    Color subText,
-    Color accentIcon,
-  ) {
-    // 📥 تم إضافة 'History' هنا بالترتيب بين Alerts و Sensors
-    final menuItems = [
-      {'id': 'Dashboard', 'icon': Icons.grid_view_rounded},
-      {'id': 'Analytics', 'icon': Icons.analytics_outlined},
-      {'id': 'Alerts', 'icon': Icons.warning_amber_rounded},
-      {
-        'id': 'History',
-        'icon': Icons.history_toggle_off_rounded,
-      }, // 👈 الأرشيف التاريخي
-      {'id': 'Sensors', 'icon': Icons.sensors_rounded},
-      {'id': 'Settings', 'icon': Icons.settings_outlined},
-    ];
+  // 1. Kharrajna el menu items lbarra bech ma t3aodch ttkhla9 fil memory f kol rebuild
+static const List<Map<String, dynamic>> _sidebarMenuItems = [
+  {'id': 'Dashboard', 'icon': Icons.grid_view_rounded},
+  {'id': 'Analytics', 'icon': Icons.analytics_outlined},
+  {'id': 'History', 'icon': Icons.history_rounded}, // 📥 El item el jdid mte3ek
+];
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      width: _sidebarExpanded ? 240 : 70,
-      decoration: BoxDecoration(
-        color: bg,
-        border: Border(
-          right: languageNotifier.value != 'ar'
-              ? BorderSide(color: borderColor, width: 1.5)
-              : BorderSide.none,
-          left: languageNotifier.value == 'ar'
-              ? BorderSide(color: borderColor, width: 1.5)
-              : BorderSide.none,
-        ),
+Widget _buildSidebar(
+  String Function(String) t,
+  Color bg,
+  Color borderColor,
+  Color mainText,
+  Color subText,
+  Color accentIcon,
+) {
+  // 2. Na9asna mel tkarriir mta3 el check 3la el Arabic layout
+  final isRtl = languageNotifier.value == 'ar';
+
+  return AnimatedContainer(
+    duration: const Duration(milliseconds: 250), // 250ms dima a7la fil eye-comfort
+    curve: Curves.fastOutSlowIn,
+    width: _sidebarExpanded ? 240 : 70,
+    decoration: BoxDecoration(
+      color: bg,
+      border: Border(
+        right: !isRtl ? BorderSide(color: borderColor, width: 1.5) : BorderSide.none,
+        left: isRtl ? BorderSide(color: borderColor, width: 1.5) : BorderSide.none,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-            child: GestureDetector(
-              onTap: () => setState(() => _sidebarExpanded = !_sidebarExpanded),
-              behavior: HitTestBehavior.opaque,
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // --- SIDEBAR HEADER ---
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          child: InkWell( // InkWell a7sen mel GestureDetector bech ta3tik feedback splash sghira
+            onTap: () => setState(() => _sidebarExpanded = !_sidebarExpanded),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.all(4.0),
               child: Row(
-                mainAxisAlignment: _sidebarExpanded
-                    ? MainAxisAlignment.start
-                    : MainAxisAlignment.center,
+                mainAxisAlignment: _sidebarExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
                 children: [
                   Icon(Icons.blur_on, color: accentIcon, size: 30),
                   if (_sidebarExpanded) ...[
@@ -429,84 +423,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
           ),
-          Divider(color: borderColor, height: 1, thickness: 1.2),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView.builder(
-              itemCount: menuItems.length,
-              padding: EdgeInsets.zero,
-              itemBuilder: (context, index) {
-                final pageId = menuItems[index]['id'] as String;
-                final icon = menuItems[index]['icon'] as IconData;
-                final selected = _currentSidePage == pageId;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      color: selected
-                          ? accentIcon.withOpacity(0.12)
-                          : Colors.transparent,
-                      border: Border.all(
-                        color: selected ? accentIcon : Colors.transparent,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: InkWell(
-                      onTap: () => setState(() => _currentSidePage = pageId),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: _sidebarExpanded ? 16 : 0,
-                          vertical: 12,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: _sidebarExpanded
-                              ? MainAxisAlignment.start
-                              : MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              icon,
-                              color: selected
-                                  ? accentIcon
-                                  : subText.withOpacity(0.8),
-                              size: 20,
-                            ),
-                            if (_sidebarExpanded) ...[
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Text(
-                                  t(pageId),
-                                  style: TextStyle(
-                                    color: mainText,
-                                    fontWeight: selected
-                                        ? FontWeight.bold
-                                        : FontWeight.w500,
-                                    fontSize: 13,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+        ),
+        Divider(color: borderColor, height: 1, thickness: 1.2),
+        const SizedBox(height: 16),
 
+        // --- NAVIGATION ITEMS ---
+        Expanded(
+          child: ListView.builder(
+            itemCount: _sidebarMenuItems.length,
+            padding: EdgeInsets.zero,
+            physics: const NeverScrollableScrollPhysics(), // Safe performance bch ma ykounch 3andna scroll dakhli zayed
+            itemBuilder: (context, index) {
+              final pageId = _sidebarMenuItems[index]['id'] as String;
+              final icon = _sidebarMenuItems[index]['icon'] as IconData;
+              final isSelected = _currentSidePage == pageId;
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: isSelected ? accentIcon.withOpacity(0.12) : Colors.transparent,
+                    border: Border.all(
+                      color: isSelected ? accentIcon : Colors.transparent,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: InkWell(
+                    onTap: () => setState(() => _currentSidePage = pageId),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        // 3. Tsli7 el padding fil collapse mode bech yo93od fil center dima
+                        horizontal: _sidebarExpanded ? 16 : 8, 
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: _sidebarExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            icon,
+                            color: isSelected ? accentIcon : subText.withOpacity(0.8),
+                            size: 20,
+                          ),
+                          if (_sidebarExpanded) ...[
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Text(
+                                t(pageId),
+                                style: TextStyle(
+                                  color: mainText,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  );
+}
  // ════════════════════════════════════════════════════════════
   //  2. TOP STATUS BAR (WITH LIVE MQTT & SIMULINK INDICATORS)
   // ════════════════════════════════════════════════════════════
@@ -549,14 +537,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 isMqttConnected ? successGreen : Colors.red,
               ),
 
-              const SizedBox(width: 8),
-
-              // 🟢🔴 2. مؤشر حالة الـ Simulink المتغير ديناميكياً
-              _statusDot(
-                isSimulinkConnected ? t('simulink_on') : t('simulink_off'), 
-                isSimulinkConnected ? successGreen : Colors.red, // أخضر عند العمل، أحمر عند التوقف
-              ),
-              
               const SizedBox(width: 8),
               
               // زر تبديل الثيم المظلم/المضيء
@@ -630,7 +610,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Color subText,
     Color accentIcon,
     bool isDark,
+    BuildContext context,
+
   ) {
+    final motorState = Provider.of<MotorStreamProvider>(context);
     switch (pageName) {
       case 'Dashboard':
         return _buildDashboardPage(
@@ -642,6 +625,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           subText,
           accentIcon,
           isDark,
+          context,  // 👈 التعديل: مرري vibFftSpots بدلاً من vibrationFftSpots
         );
       case 'Analytics':
         return IndustrialChartsScreen(
@@ -650,44 +634,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
           vibrationFftSpots: vibFftSpots,   // 👈 التعديل: مرري vibFftSpots بدلاً من vibrationFftSpots
           vibrationTimeSpots: vibSpots,
         );
-      case 'Sensors':
-        return SensorsScreen(
-          key: const ValueKey('Sensors'),
-          temperature: currentTemperature,
-          vibration: currentVibration,
-          rpm: currentRPM,
-          current: currentCurrent,
-          voltage: currentVoltage,
-          energy: currentEnergy,
-          isEsp32Connected: isEsp32Connected,
-        );
-      case 'Alerts':
-        return const IndustrialAlertsPanel(key: ValueKey('Alerts'));
+      
       case 'History': 
         return HistoryScreen(
           isDarkMode: Theme.of(context).brightness == Brightness.dark,
         );
-      case 'Settings':
-        return const PredictiveMaintenanceScreen(key: ValueKey('Predictive'));
       default:
-        return Center(
-          key: ValueKey(pageName),
-          child: Text(
-            '${t(pageName)} Content View',
-            style: TextStyle(
-              color: mainText,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        );
+      return const SizedBox.shrink();
     }
   }
-
- // ════════════════════════════════════════════════════════════
-  //  4. IMMERSIVE DIGITAL TWIN DASHBOARD (THE MASTERPIECE)
   // ════════════════════════════════════════════════════════════
-  Widget _buildDashboardPage(
+  // 4. IMMERSIVE DIGITAL TWIN DASHBOARD
+  // ════════════════════════════════════════════════════════════
+  Widget _buildDashboardPage( // 👈 تـمّت إضافتها هوني بشكل صريح ورسمي
     String Function(String) t,
     String currentLang,
     Color cardBg,
@@ -695,385 +654,447 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Color mainText,
     Color subText,
     Color accentIcon,
-    bool isDark, // 👈 أضفنا المتغير هنا لتمريره للأسفل
+    bool isDark, 
+    MotorStreamProvider motorState, 
   ) {
     return SingleChildScrollView(
-      key: const ValueKey('Dashboard'),
+      key: const ValueKey('Dashboard'), 
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 🪐 المحرك الكبير في الصدارة يتكيف الآن مع الوضعين تلقائياً
+          // الـ Digital Twin Visualizer ممتعك...
           _buildTwinVisualizer(
-            temperature: currentTemperature,
-            vibration: currentVibration,
-            rpm: currentRPM,
-            current: currentCurrent,
+            temperature: motorState.currentTemperature,
+            vibration: motorState.currentVibration,
+            rpm: motorState.currentRPM,
+            current: motorState.currentCurrent,
             accentIcon: accentIcon,
             currentLang: currentLang,
             t: t,
-            isDark: isDark, // 👈 تم التمرير هنا بنجاح
+            isDark: isDark, 
           ),
+          
           const SizedBox(height: 20),
+          // باقية الكربات والمؤشرات...
         ],
       ),
     );
   }
+}
 
-  // ════════════════════════════════════════════════════════════
-  //  DIGITAL TWIN VISUALIZER (FULLWIDTH EXPANDED VERSION)
-  // ════════════════════════════════════════════════════════════
-  Widget _buildTwinVisualizer({
-    required double temperature,
-    required double vibration,
-    required double rpm,
-    required double current,
-    required Color accentIcon,
-    required String currentLang,
-    required String Function(String) t,
-    required bool isDark, // 👈 استلام المتغير الذكي هنا لضبط الجماليات
+// ════════════════════════════════════════════════════════════
+// 1. BUSINESS LOGIC: MOTOR STREAM PROVIDER (DATA ONLY)
+// ════════════════════════════════════════════════════════════
+class MotorStreamProvider extends ChangeNotifier {
+  // المصفوفات اللي باش يخزنوا نقاط الكربا (X, Y)
+  List<FlSpot> vibrationPointsESP32 = [];
+  List<FlSpot> tempPointsESP32 = [];
+  List<FlSpot> rpmPointsESP32 = [];
+  List<FlSpot> currentPointsESP32 = [];
+
+  // القيم اللحظية المكتوبة (Digital Readouts)
+  double currentVibration = 0.0;
+  double currentTemperature = 0.0;
+  double currentRPM = 0.0;
+  double currentCurrent = 0.0;
+
+  double _timeCounter = 0.0;
+
+  // 📥 تحديث البيانات القادمة من الـ ESP32 عبر الـ MQTT والـ Ethernet
+  void updateTelemetryFromESP32({
+    required double incomingVib,
+    required double incomingTemp,
+    required double incomingRpm,
+    required double incomingCurrent,
   }) {
-    final Color glowColor = _getTempGlowColor(temperature);
-    final double calculatedSpeed = (10.0 + vibration * 8).clamp(10.0, 150.0);
+    _timeCounter += 0.2; // زيادة الوقت على محور X
 
-    // 🎨 ضبط الألوان ديناميكياً حسب وضع الليل والنهار
-    final Color containerBg = isDark 
-        ? const Color(0xFF0C1322)  // خلفية داكنة السيبرانية لوضع الليل
-        : const Color(0xFFF8FAFC); // خلفية فاتحة جداً ونظيفة لوضع النهار
+    // 1. تحديث القيم المكتوبة ديريكت
+    currentVibration = incomingVib;
+    currentTemperature = incomingTemp;
+    currentRPM = incomingRpm;
+    currentCurrent = incomingCurrent;
 
-    final Color containerBorder = isDark 
-        ? const Color(0xFF1E2D4A)  // حدود داكنة متناسقة
-        : const Color(0xFFE2E8F0); // حدود فاتحة ناعمة (Slate-200)
+    // 2. زيادة نقطة جديدة في كل كربا
+    vibrationPointsESP32.add(FlSpot(_timeCounter, incomingVib));
+    tempPointsESP32.add(FlSpot(_timeCounter, incomingTemp));
+    rpmPointsESP32.add(FlSpot(_timeCounter, incomingRpm));
+    currentPointsESP32.add(FlSpot(_timeCounter, incomingCurrent));
 
-    final Color titleColor = isDark 
-        ? Colors.white.withOpacity(0.9) 
-        : const Color(0xFF0F172A); // نص عنوان داكن جداً في النهار لسهولة القراءة
+    // 3. صمّام أمان الـ Sliding Window لحماية الذاكرة (آخر 30 نقطة)
+    if (vibrationPointsESP32.length > 30) {
+      vibrationPointsESP32.removeAt(0);
+      tempPointsESP32.removeAt(0);
+      rpmPointsESP32.removeAt(0);
+      currentPointsESP32.removeAt(0);
+    }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // نثبتوا هل الشاشة ضيقة (Responsive Check)
-        final bool isNarrow = constraints.maxWidth < 750;
+    // ⚠️ تنبيه الواجهة لإعادة الرسم (مهمة جداً ونقصت في كودك الفوق!)
+    notifyListeners();
+  }
+}
 
-        return Container(
-          height: isNarrow ? 720 : 680, 
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: containerBg, // 👈 الخلفية المتغيرة ديناميكياً
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: containerBorder, width: 1.5), // 👈 الحدود المتغيرة
-            boxShadow: [
+// ════════════════════════════════════════════════════════════
+// 2. UI LAYER: DIGITAL TWIN VISUALIZER (OUTSIDE THE PROVIDER)
+// ════════════════════════════════════════════════════════════
+// 💡 رجعنا الدالة هوني كـ Widget مستقل أو دالة داخل الـ Screen State ممتعك ديريكت
+Widget _buildTwinVisualizer({
+  required double temperature,
+  required double vibration,
+  required double rpm,
+  required double current,
+  required Color accentIcon,
+  required String currentLang,
+  required String Function(String) t,
+  required bool isDark, 
+  required BuildContext context, // زدنـا الـ context هوني لسلامة الـ Header
+}) {
+  Color _getTempGlowColor(double temp) {
+    if (temp < 40) return const Color(0xFF0077FF);
+    if (temp < 70) return const Color(0xFFFF9800);
+    return const Color(0xFFFF3D00);
+  }
+
+  final Color glowColor = _getTempGlowColor(temperature);
+  final double calculatedSpeed = (10.0 + vibration * 8).clamp(10.0, 150.0);
+
+  // 🎨 ضبط الألوان ديناميكياً حسب وضع الليل والنهار
+  final Color containerBg = isDark 
+      ? const Color(0xFF0C1322)  
+      : const Color(0xFFF8FAFC); 
+
+  final Color containerBorder = isDark 
+      ? const Color(0xFF1E2D4A)  
+      : const Color(0xFFE2E8F0); 
+
+  final Color titleColor = isDark 
+      ? Colors.white.withOpacity(0.9) 
+      : const Color(0xFF0F172A); 
+
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      final bool isNarrow = constraints.maxWidth < 750;
+
+      return Container(
+        height: isNarrow ? 720 : 680, 
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: containerBg, 
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: containerBorder, width: 1.5), 
+          boxShadow: [
+            BoxShadow(
+              color: glowColor.withOpacity(isDark ? 0.08 : 0.04), 
+              blurRadius: 40,
+              spreadRadius: 2,
+            ),
+            if (!isDark) 
               BoxShadow(
-                color: glowColor.withOpacity(isDark ? 0.08 : 0.04), // توهج ناعم يقل في النهار
-                blurRadius: 40,
-                spreadRadius: 2,
+                color: const Color(0xFF0F172A).withOpacity(0.03),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
               ),
-              if (!isDark) // إضافة ظل ناعم إضافي في وضع النهار ليعطي بعداً هندسياً للكارت
-                BoxShadow(
-                  color: const Color(0xFF0F172A).withOpacity(0.03),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                ),
-            ],
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // Cyber Grid Effect (تأثير شبكة الرسوم البيانية المستقبلية)
-              Positioned.fill(
-                child: Opacity(
-                  opacity: isDark ? 0.03 : 0.05, // تفتيح الشبكة قليلاً في النهار لتظهر بوضوح ناعم
-                  child: GridPaper(
-                    color: accentIcon,
-                    divisions: 2,
-                    subdivisions: 1,
-                    interval: 40,
-                  ),
+          ],
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Cyber Grid Effect
+            Positioned.fill(
+              child: Opacity(
+                opacity: isDark ? 0.03 : 0.05, 
+                child: GridPaper(
+                  color: accentIcon,
+                  divisions: 2,
+                  subdivisions: 1,
+                  interval: 40,
                 ),
               ),
+            ),
 
-              // Title Bar Info (شريط معلومات الموديل والحالة العلوية)
-              Positioned(
-                top: 20,
-                left: 24,
-                right: 24,
-                child: Row(
-                  children: [
-                    Container(
-                      width: 4,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: glowColor,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
+            // Title Bar Info
+            Positioned(
+              top: 20,
+              left: 24,
+              right: 24,
+              child: Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: glowColor,
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      t('motor_model'),
+                      style: TextStyle(
+                        color: titleColor, 
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  _buildMotorStatusHeader(
+                    context: context,
+                    temperature: temperature,
+                    vibration: vibration,
+                    currentLang: currentLang,
+                    t: t,
+                  ),
+                ],
+              ),
+            ),
+
+            // 🪐 مركز الشاشة: مجسم الـ 3D لتوأم المحرك الرقمي
+            Positioned.fill(
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: 60,
+                  horizontal: isNarrow ? 30 : 180, 
+                ),
+                child: ModelViewer(
+                  src: 'assets/images/motor.glb',
+                  alt: 'Industrial Motor 3D Digital Twin',
+                  autoPlay: true,
+                  autoRotate: false,
+                  cameraControls: true,
+                  rotationPerSecond: '${calculatedSpeed.toStringAsFixed(0)}deg',
+                  backgroundColor: const Color(0x00FFFFFF), 
+                ),
+              ),
+            ),
+
+            // 🛰️ توزيع الكروت والبيانات حسب العرض المتاح
+            if (!isNarrow) ...[
+              Positioned(
+                top: 80,
+                left: 24,
+                child: _buildImmersiveChartBadge(
+                  t('motor_temperature'),
+                  '${temperature.toStringAsFixed(1)} ${t('degree_label')}',
+                  glowColor,
+                  [0.3, 0.4, 0.35, 0.55, 0.45, 0.65, (temperature / 100).clamp(0.0, 1.0)],
+                ),
+              ),
+              Positioned(
+                bottom: 40,
+                left: 24,
+                child: _buildImmersiveChartBadge(
+                  t('vibration_severity'),
+                  '${vibration.toStringAsFixed(2)} ${t('mm_s_label')}',
+                  const Color(0xFF00E676),
+                  [0.4, 0.5, 0.3, 0.7, 0.2, 0.6, (vibration / 10).clamp(0.0, 1.0)],
+                ),
+              ),
+              Positioned(
+                top: 80,
+                right: 24,
+                child: _buildImmersiveChartBadge(
+                  t('motor_speed'),
+                  '${rpm.toInt()} ${t('rpm_label')}',
+                  const Color(0xFFFFB300),
+                  [0.78, 0.82, 0.80, 0.85, 0.81, 0.83, (rpm / 3000).clamp(0.0, 1.0)],
+                ),
+              ),
+              Positioned(
+                bottom: 40,
+                right: 24,
+                child: _buildImmersiveChartBadge(
+                  t('current_absorbed'),
+                  '${current.toStringAsFixed(1)} ${t('amp_label')}',
+                  const Color(0xFFE040FB),
+                  [0.25, 0.45, 0.35, 0.50, 0.40, 0.58, (current / 25).clamp(0.0, 1.0)],
+                ),
+              ),
+            ] else ...[
+              Positioned(
+                bottom: 20,
+                left: 16,
+                right: 16,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Flexible(
                       child: Text(
-                        t('motor_model'),
+                        '${temperature.toStringAsFixed(1)}${t('degree_label')}',
                         style: TextStyle(
-                          color: titleColor, // 👈 يتغير حسب وضع الشاشة
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
+                          color: glowColor,
+                          fontWeight: FontWeight.w900,
+                          fontFamily: 'monospace',
+                          fontSize: 13,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    _buildMotorStatusHeader(
-                      context: context,
-                      temperature: temperature,
-                      vibration: vibration,
-                      currentLang: currentLang,
-                      t: t,
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        '${vibration.toStringAsFixed(1)} ${t('mm_s_label')}',
+                        style: const TextStyle(
+                          color: Color(0xFF00E676),
+                          fontWeight: FontWeight.w900,
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        '${rpm.toInt()} ${t('rpm_label')}',
+                        style: const TextStyle(
+                          color: Color(0xFFFFB300),
+                          fontWeight: FontWeight.w900,
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        '${current.toStringAsFixed(1)} ${t('amp_label')}',
+                        style: const TextStyle(
+                          color: Color(0xFFE040FB),
+                          fontWeight: FontWeight.w900,
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
               ),
-
-              // 🪐 مركز الشاشة: مجسم الـ 3D لتوأم المحرك الرقمي
-              Positioned.fill(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    vertical: 60,
-                    horizontal: isNarrow ? 30 : 180, 
-                  ),
-                  child: ModelViewer(
-                    src: 'assets/images/motor.glb',
-                    alt: 'Industrial Motor 3D Digital Twin',
-                    autoPlay: true,
-                    autoRotate: false,
-                    cameraControls: true,
-                    rotationPerSecond: '${calculatedSpeed.toStringAsFixed(0)}deg',
-                    backgroundColor: const Color(0x00FFFFFF), // شفاف تماماً ليعكس لون الخلفية المتغير
-                  ),
-                ),
-              ),
-
-              // 🛰️ توزيع الكروت والبيانات بطريقة ذكية ومتجاوبة حسب العرض المتاح
-              if (!isNarrow) ...[
-                // ── [الوضع العريض: كروت عائمة بكامل بياناتها المتقدمة والرسومات المصغرة]
-                Positioned(
-                  top: 80,
-                  left: 24,
-                  child: _buildImmersiveChartBadge(
-                    t('motor_temperature'),
-                    '${temperature.toStringAsFixed(1)} ${t('degree_label')}',
-                    glowColor,
-                    [0.3, 0.4, 0.35, 0.55, 0.45, 0.65, (temperature / 100).clamp(0.0, 1.0)],
-                  ),
-                ),
-                Positioned(
-                  bottom: 40,
-                  left: 24,
-                  child: _buildImmersiveChartBadge(
-                    t('vibration_severity'),
-                    '${vibration.toStringAsFixed(2)} ${t('mm_s_label')}',
-                    const Color(0xFF00E676),
-                    [0.4, 0.5, 0.3, 0.7, 0.2, 0.6, (vibration / 10).clamp(0.0, 1.0)],
-                  ),
-                ),
-                Positioned(
-                  top: 80,
-                  right: 24,
-                  child: _buildImmersiveChartBadge(
-                    t('motor_speed'),
-                    '${rpm.toInt()} ${t('rpm_label')}',
-                    const Color(0xFFFFB300),
-                    [0.78, 0.82, 0.80, 0.85, 0.81, 0.83, (rpm / 3000).clamp(0.0, 1.0)],
-                  ),
-                ),
-                Positioned(
-                  bottom: 40,
-                  right: 24,
-                  child: _buildImmersiveChartBadge(
-                    t('current_absorbed'),
-                    '${current.toStringAsFixed(1)} ${t('amp_label')}',
-                    const Color(0xFFE040FB),
-                    [0.25, 0.45, 0.35, 0.50, 0.40, 0.58, (current / 25).clamp(0.0, 1.0)],
-                  ),
-                ),
-              ] else ...[
-                // ── [الوضع الضيق: شريط سفلي مدمج لعرض القيم اللحظية بوضوح تام وثبات هندسي]
-                Positioned(
-                  bottom: 20,
-                  left: 16,
-                  right: 16,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          '${temperature.toStringAsFixed(1)}${t('degree_label')}',
-                          style: TextStyle(
-                            color: glowColor,
-                            fontWeight: FontWeight.w900,
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          '${vibration.toStringAsFixed(1)} ${t('mm_s_label')}',
-                          style: const TextStyle(
-                            color: Color(0xFF00E676),
-                            fontWeight: FontWeight.w900,
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          '${rpm.toInt()} ${t('rpm_label')}',
-                          style: const TextStyle(
-                            color: Color(0xFFFFB300),
-                            fontWeight: FontWeight.w900,
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          '${current.toStringAsFixed(1)} ${t('amp_label')}',
-                          style: const TextStyle(
-                            color: Color(0xFFE040FB),
-                            fontWeight: FontWeight.w900,
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
-          ),
-        );
-      },
-    );
-  }
-
-Widget _buildMotorStatusHeader({
-  required BuildContext context, // 👈 أضفنا الـ BuildContext هنا لكي نتمكن من قراءة الثيم الحالي
-  required double temperature,
-  required double vibration,
-  required String currentLang,
-  required String Function(String) t,
-}) {
-  Color statusColor;
-  String statusText;
-  String subText;
-
-  // فحص إذا كان التطبيق حالياً في الوضع المظلم (Dark Mode)
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-
-  // 1️⃣ تحديد ألوان الحالات حسب قيم المستشعرات
-  if (temperature > 80.0 || vibration > 7.1) {
-    statusColor = const Color(0xFFFF5252); // أحمر - خطر
-    statusText = t('danger_critique');
-    subText = t('shutdown_recommendation');
-  } else if (temperature >= 65.0 || vibration >= 4.5) {
-    statusColor = const Color(0xFFFFB300); // برتقالي - صيانة
-    statusText = t('alerte_maintenance');
-    subText = t('inspection_required');
-  } else {
-    statusColor = isDark ? const Color(0xFF00E676) : const Color(0xFF00C853); // أخضر ذكي يتكيف مع الخلفية
-    statusText = t('system_normal');
-    subText = t('system_normal_sub'); // 👈 قمت بتعديل الـ key هنا ليكون منطقياً وحسب حالة العمل الطبيعية
-  }
-
-  // 2️⃣ تحديد لون خلفية الـ الكارت ولون النص الفرعي حسب وضع النهار والليل
-  final containerBgColor = isDark 
-      ? const Color(0xFF1E293B).withOpacity(0.6) // رمادي مزرق داكن ومناسب لـ Dark mode
-      : Colors.grey[100]; // رمادي فاتح جداً ونظيف لـ Light mode
-
-  final subTextColor = isDark 
-      ? const Color(0xAA8A99AD) // نص رمادي فاتح للـ Dark
-      : const Color(0xFF64748B); // نص رمادي غامق وواضح للـ Light
-
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    decoration: BoxDecoration(
-      color: containerBgColor, // 👈 الخلفية المتغيرة
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: statusColor.withOpacity(0.4), width: 1.5),
-      boxShadow: [
-        BoxShadow(
-          color: statusColor.withOpacity(isDark ? 0.15 : 0.08), // تقليل التوهج في النهار لكي لا يفسد التصميم
-          blurRadius: 16,
-          spreadRadius: 2,
-        ),
-      ],
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // نقطة الحالة المضيئة (Status LED Indicator)
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: statusColor,
-            boxShadow: [
-              BoxShadow(
-                color: statusColor.withOpacity(0.8),
-                blurRadius: 8,
-                spreadRadius: 2,
-              ),
-              BoxShadow(
-                color: statusColor.withOpacity(0.4),
-                blurRadius: 16,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 14),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start, // 👈 جعلتها Start لتبدأ النصوص متناسقة بجانب نقطة الحالة
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              statusText,
-              style: TextStyle(
-                color: statusColor,
-                fontWeight: FontWeight.w900,
-                fontSize: 11,
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subText,
-              style: TextStyle(
-                color: subTextColor, // 👈 النص الفرعي المتغير
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
           ],
         ),
-      ],
-    ),
+      );
+    },
   );
 }
+
+  Widget _buildMotorStatusHeader({
+    required BuildContext context, // 👈 أضفنا الـ BuildContext هنا لكي نتمكن من قراءة الثيم الحالي
+    required double temperature,
+    required double vibration,
+    required String currentLang,
+    required String Function(String) t,
+  }) {
+    Color statusColor;
+    String statusText;
+    String subText;
+
+    // فحص إذا كان التطبيق حالياً في الوضع المظلم (Dark Mode)
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // 1️⃣ تحديد ألوان الحالات حسب قيم المستشعرات
+    if (temperature > 80.0 || vibration > 7.1) {
+      statusColor = const Color(0xFFFF5252); // أحمر - خطر
+      statusText = t('danger_critique');
+      subText = t('shutdown_recommendation');
+    } else if (temperature >= 65.0 || vibration >= 4.5) {
+      statusColor = const Color(0xFFFFB300); // برتقالي - صيانة
+      statusText = t('alerte_maintenance');
+      subText = t('inspection_required');
+    } else {
+      statusColor = isDark ? const Color(0xFF00E676) : const Color(0xFF00C853); // أخضر ذكي يتكيف مع الخلفية
+      statusText = t('system_normal');
+      subText = t('system_normal_sub'); // 👈 قمت بتعديل الـ key هنا ليكون منطقياً وحسب حالة العمل الطبيعية
+    }
+
+    // 2️⃣ تحديد لون خلفية الـ الكارت ولون النص الفرعي حسب وضع النهار والليل
+    final containerBgColor = isDark 
+        ? const Color(0xFF1E293B).withOpacity(0.6) // رمادي مزرق داكن ومناسب لـ Dark mode
+        : Colors.grey[100]; // رمادي فاتح جداً ونظيف لـ Light mode
+
+    final subTextColor = isDark 
+        ? const Color(0xAA8A99AD) // نص رمادي فاتح للـ Dark
+        : const Color(0xFF64748B); // نص رمادي غامق وواضح للـ Light
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: containerBgColor, // 👈 الخلفية المتغيرة
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor.withOpacity(0.4), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: statusColor.withOpacity(isDark ? 0.15 : 0.08), // تقليل التوهج في النهار لكي لا يفسد التصميم
+            blurRadius: 16,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // نقطة الحالة المضيئة (Status LED Indicator)
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: statusColor,
+              boxShadow: [
+                BoxShadow(
+                  color: statusColor.withOpacity(0.8),
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+                BoxShadow(
+                  color: statusColor.withOpacity(0.4),
+                  blurRadius: 16,
+                  spreadRadius: 4,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start, // 👈 جعلتها Start لتبدأ النصوص متناسقة بجانب نقطة الحالة
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                statusText,
+                style: TextStyle(
+                  color: statusColor,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subText,
+                style: TextStyle(
+                  color: subTextColor, // 👈 النص الفرعي المتغير
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
   // ════════════════════════════════════════════════════════════
   //  REUSABLE WIDGETS
   // ════════════════════════════════════════════════════════════
   Widget _buildImmersiveChartBadge(
+    BuildContext context,
     String title,
     String value,
     Color color,
@@ -1175,69 +1196,75 @@ Widget _buildMotorStatusHeader({
  //════════════════════════════════════════════════════════════
   //  STATE LIFECYCLE (INIT, DISPOSE & LIVE TELEMETRY COUPLING)
   // ════════════════════════════════════════════════════════════
-  @override
+@override
   void initState() {
     super.initState();
 
-      // 1️⃣ إعداد الـ ربط الحي مع سيرفر الـ MQTT الخاص بـ Feedcom قابس
-      _mqttService = MqttService(
-        
-        onMqttStatusChanged: (bool mqttConnected) {
-          if (mounted) {
-            setState(() {
-              isMqttConnected = mqttConnected;
-            });
-          }
-        },
-        onStatusChanged: (bool isConnected) {
-          // تحديث مؤشر الـ Simulink في الشريط العلوي ديناميكياً
-          if (mounted) {
-            setState(() {
-              isSimulinkConnected = isConnected;
-            });
-          }
-        },
-        onTelemetryReceived: (double temp, double vib, double current) {
-          // 2️⃣ استقبال البيانات اللحظية القادمة من السيمولينك وضخها في واجهة الـ Flutter
-          if (mounted) {
-            setState(() {
-              // تحديث القيم الرقمية للكروت العائمة والمؤشرات
-              temperatureValue = temp;
-              vibrationValue = vib;
-              currentValue = current;
-              
-              currentTemperature = temp;
-              currentVibration = vib;
-              currentCurrent = current;
-              
-              // حساب سرعة الدوران التقريبية ديناميكياً بناءً على التردد وحالة المحرك
-              if (current > 0.5) {
-                currentRPM = (1500.0 - (vib * 12) - (temp * 0.4)).clamp(1380.0, 1485.0);
-              } else {
-                currentRPM = 0.0;
-              }
+    // 1️⃣ إعداد الـ ربط الحي مع سيرفر الـ MQTT الخاص بـ Feedcom قابس
+    _mqttService = MqttService(
+      onMqttStatusChanged: (bool mqttConnected) {
+        if (mounted) {
+          setState(() {
+            isMqttConnected = mqttConnected;
+          });
+        }
+      },
+      onStatusChanged: (bool isConnected) {
+        // تحديث مؤشر الـ Simulink في الشريط العلوي ديناميكياً
+        if (mounted) {
+          setState(() {
+            isSimulinkConnected = isConnected;
+          });
+        }
+      },
+      onTelemetryReceived: (double temp, double vib, double current) {
+        // 2️⃣ استقبال البيانات اللحظية القادمة من السيمولينك وضخها في واجهة الـ Flutter
+        if (mounted) {
+          setState(() {
+            // تحديث القيم الرقمية للكروت العائمة والمؤشرات
+            temperatureValue = temp;
+            vibrationValue = vib;
+            currentValue = current;
+            
+            currentTemperature = temp;
+            currentVibration = vib;
+            currentCurrent = current;
+            
+            // حساب سرعة الدوران التقريبية ديناميكياً بناءً على التردد وحالة المحرك
+            if (current > 0.5) {
+              currentRPM = (1500.0 - (vib * 12) - (temp * 0.4)).clamp(1380.0, 1485.0);
+            } else {
+              currentRPM = 0.0;
+            }
 
-              // 📊 تحديث مصفوفة المنحنى الزمني (Vibration Time Waveform)
-              timeCounter++;
-              vibSpots.add(FlSpot(timeCounter.toDouble(), vib));
-              if (vibSpots.length > 50) {
-                vibSpots.removeAt(0); // الحفاظ على آخر 50 نقطة فقط لمنع بطء التطبيق
-              }
+            sessionStartTime ??= DateTime.now();
+      
+            // قمنا بضرب وقت العداد في عامل توسيع (Scale Factor) لتباعد المسافات أفقياً
+            double simulatedX = vibrationTimeSpots.isEmpty ? 0.0 : vibrationTimeSpots.last.x + 0.02;
 
-              // 🎯 توليد مصفوفة FFT محلياً (Simulated) بناءً على شدة الاهتزاز الحقيقية
-              // لأن سيمولينك يبعث بس 3 قيم فيزيائية، الـ FFT نحسبها هنا في Flutter
-              vibFftSpots = _generateSimulatedFft(vib);
+            // 📈 ضخ النقاط بالمسافات المتباعدة الجديدة
+            vibrationTimeSpots.add(FlSpot(simulatedX, vib));
+            vibSpots.add(FlSpot(simulatedX, vib));
+            tempSpots.add(FlSpot(simulatedX, temp));
+            currentSpots.add(FlSpot(simulatedX, current));
 
-              // تشغيل خوارزمية حفظ الأرشيف التاريخي والـ KPIs
-              _checkAndSaveHistory();
-            });
-          }
-        },
-      );
+            // 🧹 الحل السحري: الحذف بناءً على عدد النقاط (Buffer) وليس وقت الساعة المتسارع
+            // نترك 50 نقطة دائماً في الشاشة لكي يظهر المنحنى مفروداً والمسافات بينها كبيرة ونظيفة
+            if (vibrationTimeSpots.length > 50) vibrationTimeSpots.removeAt(0);
+            if (vibSpots.length > 50) vibSpots.removeAt(0);
+            if (tempSpots.length > 50) tempSpots.removeAt(0);
+            if (currentSpots.length > 50) currentSpots.removeAt(0);
 
-      // 3️⃣ إطلاق أمر الاتصال الفوري بالسيرفر السحابي عند فتح التطبيق
-      _connectToMqttTwin();
-  }
+            vibFftSpots = _generateSimulatedFft(vib);
+            _checkAndSaveHistory();
+          });
+        }
+      }, // 👈 إغلاق دالة onTelemetryReceived بشكل صحيح
+    ); // 👈 إغلاق باني الكلاس MqttService بشكل صحيح
+
+    // 3️⃣ إطلاق أمر الاتصال الفوري بالسيرفر السحابي عند فتح التطبيق
+    _connectToMqttTwin();
+  } // 👈 إغلاق دالة initState النظيف
 
   Future<void> _connectToMqttTwin() async {
     await _mqttService.connect();
@@ -1320,4 +1347,4 @@ class TelemetrySparklinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
+}*/
